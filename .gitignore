@@ -210,3 +210,10 @@ __marimo__/
 .agent/
 .cursor/
 .agents/
+
+# RoboMME local data and generated videos
+data/robomme_data_h5/
+runs/
+*.h5
+*.h5.tar.xz
+*.mp4

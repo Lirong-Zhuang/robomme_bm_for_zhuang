@@ -93,8 +93,8 @@ def _extract_frames(obs: dict, is_video_demo_fn=None) -> list[np.ndarray]:
 # ---------------------------------------------------------------------------
 def main(
     dataset: DatasetType = "test",
-    task_id: TaskID = "PickXtimes",
-    action_space_type: ActionSpaceType = "joint_angle",
+    task_id: TaskID = "BinFill",
+    action_space_type: ActionSpaceType = "multi_choice",
     episode_idx: int = 0,
 ) -> None:
     """
@@ -136,14 +136,28 @@ def main(
             task_goal = info["task_goal"][0]
             print(f"Task goal: {task_goal}")
 
+            # print subgoals
+            # print("Oracle subtasks:")
+            # for i, task in enumerate(getattr(env.unwrapped, "task_list", [])):
+            #     print(
+            #         f"Subtask {i + 1}: SimpleSG = {task.get('name')};  "
+            #         f"GroundedSG = {task.get('subgoal_segment')}"
+            #     )
+            print("Online SimpleSG:", info.get("simple_subgoal_online"))
+            print("Online GroundedSG:", info.get("grounded_subgoal_online"))
+
             frames = _extract_frames(
                 obs, is_video_demo_fn=lambda i, n=len(obs["front_rgb_list"]): i < n - 1
             )
 
             action_gen = generate_sample_actions(action_space_type, env=env)
             for action in action_gen:
-                print(f"Action: {action}")
+                # print(f"Action: {action}")
                 obs, _, terminated, truncated, info = env.step(action)
+
+                print("Online SimpleSG:", info.get("simple_subgoal_online"))
+                print("Online GroundedSG:", info.get("grounded_subgoal_online"))
+
                 status = info.get("status", "unknown")
                 if status == "error":
                     print(f"Step error: {info.get('error_message', 'unknown error')}")
