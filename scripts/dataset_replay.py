@@ -4,7 +4,7 @@ Loads recorded actions from record_dataset_<Task>.h5, steps the environment
 """
 
 import os
-# os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
 import json
 from pathlib import Path
@@ -214,7 +214,7 @@ def process_episode(
 
     print(f"\nTask: {task_id}, Episode: {episode_idx}")
     print(f"Task goal: {task_goal}")
-    print(f"Total actions after dedup: {len(action_sequence)}")
+    # print(f"Total actions after dedup: {len(action_sequence)}")
 
     obs, info = env.reset()
     frames = _extract_frames(
@@ -222,7 +222,7 @@ def process_episode(
     )
     # print first subgoals
     print(f"SimpleSG 1:", info.get("simple_subgoal_online"))
-    print(f"Online GroundedSG 1:", info.get("grounded_subgoal_online"))
+    print(f"GroundedSG 1:", info.get("grounded_subgoal_online"))
 
     outcome = "unknown"
     for seq_idx, action in enumerate(action_sequence):
@@ -230,7 +230,7 @@ def process_episode(
             obs, _, terminated, truncated, info = env.step(action)
 
             print(f"SimpleSG {seq_idx + 2}:", info.get("simple_subgoal_online"))
-            print(f"Online GroundedSG {seq_idx + 2}:", info.get("grounded_subgoal_online"))
+            print(f"GroundedSG {seq_idx + 2}:", info.get("grounded_subgoal_online"))
 
             frames.extend(_extract_frames(obs))
         except Exception as e:
@@ -254,8 +254,8 @@ def process_episode(
 def replay(
     h5_data_dir: str = "data/robomme_data_h5",
     action_space_type: ActionSpaceType = "multi_choice",
-    replay_number: int = 2,
-    task_id: str = "BinFill",
+    replay_number: int = 4,
+    task_id: str = "RouteStick",
 ) -> None:
     """Replay episodes from HDF5 dataset files and save rollout videos."""
     task_ids = BenchmarkEnvBuilder.get_task_list() if task_id == "All" else [task_id]
