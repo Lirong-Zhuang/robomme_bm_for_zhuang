@@ -4,7 +4,7 @@ Loads recorded actions from record_dataset_<Task>.h5, steps the environment
 """
 
 import os
-os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+# os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
 import json
 from pathlib import Path
@@ -254,20 +254,23 @@ def process_episode(
 def replay(
     h5_data_dir: str = "data/robomme_data_h5",
     action_space_type: ActionSpaceType = "multi_choice",
-    replay_number: int = 1,
+    replay_number: int = 2,
+    task_id: str = "BinFill",
 ) -> None:
     """Replay episodes from HDF5 dataset files and save rollout videos."""
-    for task_id in BenchmarkEnvBuilder.get_task_list():
-        file_path = Path(h5_data_dir) / f"record_dataset_{task_id}.h5"
+    task_ids = BenchmarkEnvBuilder.get_task_list() if task_id == "All" else [task_id]
+
+    for tid in task_ids:
+        file_path = Path(h5_data_dir) / f"record_dataset_{tid}.h5"
 
         if not file_path.exists():
-            print(f"Skipping {task_id}: file not found: {file_path}")
+            print(f"Skipping {tid}: file not found: {file_path}")
             continue
 
         with h5py.File(file_path, "r") as data:
             episode_indices = _get_episode_indices(data)
             for episode_idx in episode_indices[:min(replay_number, len(episode_indices))]:
-                process_episode(data, episode_idx, task_id, action_space_type)
+                process_episode(data, episode_idx, tid, action_space_type)
 
 
 if __name__ == "__main__":
