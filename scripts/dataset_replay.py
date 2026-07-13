@@ -255,9 +255,15 @@ def replay(
     h5_data_dir: str = "data/robomme_data_h5",
     action_space_type: ActionSpaceType = "multi_choice",
     replay_number: int = 4,
-    task_id: str = "RouteStick",
+    task_id: str = "BinFill",
+    episode_indices: list[int] | None = [2, 3],
 ) -> None:
-    """Replay episodes from HDF5 dataset files and save rollout videos."""
+    """Replay episodes from HDF5 dataset files and save rollout videos.
+
+    If ``episode_indices`` is provided, only those episodes are replayed and
+    ``replay_number`` is ignored. Otherwise, the first ``replay_number``
+    episodes in the dataset are replayed.
+    """
     task_ids = BenchmarkEnvBuilder.get_task_list() if task_id == "All" else [task_id]
 
     for tid in task_ids:
@@ -268,8 +274,21 @@ def replay(
             continue
 
         with h5py.File(file_path, "r") as data:
-            episode_indices = _get_episode_indices(data)
-            for episode_idx in episode_indices[:min(replay_number, len(episode_indices))]:
+            available_indices = _get_episode_indices(data)
+            if episode_indices is None:
+                selected_indices = available_indices[:replay_number]
+            else:
+                selected_indices = episode_indices
+                missing_indices = sorted(set(selected_indices) - set(available_indices))
+                if missing_indices:
+                    print(
+                        f"Skipping unavailable episodes for {tid}: {missing_indices}"
+                    )
+                selected_indices = [
+                    idx for idx in selected_indices if idx in available_indices
+                ]
+
+            for episode_idx in selected_indices:
                 process_episode(data, episode_idx, tid, action_space_type)
 
 
