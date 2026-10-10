@@ -47,6 +47,10 @@ class BinFill(BaseEnv):
     goal_thresh = 0.025
     cube_spawn_half_size = 0.05
     cube_spawn_center = (0, 0)
+    # The policy emits 16-action chunks. Keep a successfully inserted cube
+    # visible through the next Manager/Reporter decision boundary, then move it
+    # out of the scene as before.
+    bin_cube_removal_delay_steps = 17
 
     # config_hard = {
     # 'color': 3, 
@@ -350,6 +354,8 @@ class BinFill(BaseEnv):
             self.red_cubes_in_bin=0
             self.blue_cubes_in_bin=0
             self.green_cubes_in_bin=0
+            self._binfill_consumed_cube_ids = set()
+            self._binfill_pending_cube_removals = []
             self.binfill_language_sequence = []
             color_task_definitions = [
                 ("blue", self.blue_cubes, self.blue_cubes_target_number),
@@ -375,7 +381,10 @@ class BinFill(BaseEnv):
                         "segment":[cube_collection[i]]
                     })
                     tasks.append({
-                        "func": lambda c=self.all_cubes: is_any_obj_dropped_onto_delete(self, objects=c, target=self.board_with_hole),
+                        "func": lambda c=self.all_cubes: self._is_any_obj_dropped_onto_with_delayed_removal(
+                            objects=c,
+                            target=self.board_with_hole,
+                        ),
                         "name": f"put it into the bin",
                         "subgoal_segment":"put it into the bin at <>",
                         "choice_label": "put it into the bin",
@@ -394,7 +403,10 @@ class BinFill(BaseEnv):
                 "demonstration": False,
                 "failure_func":lambda  c=self.all_cubes:[not check_in_bin_number(self,in_bin_list= [self.red_cubes_in_bin, self.blue_cubes_in_bin, self.green_cubes_in_bin],
                                                             total_number_list=[self.red_cubes_target_number, self.blue_cubes_target_number, self.green_cubes_target_number])
-                ,is_any_obj_dropped_onto_delete(self, objects=c, target=self.board_with_hole)],
+                ,self._is_any_obj_dropped_onto_with_delayed_removal(
+                    objects=c,
+                    target=self.board_with_hole,
+                )],
                 "solve": lambda env, planner: [solve_button(env, planner, obj=self.button)],
                   "segment":self.cap_link 
             })
@@ -412,12 +424,93 @@ class BinFill(BaseEnv):
                 self.fail_grasp_task_index = None
 
 
+    @staticmethod
+    def _stop_cube_motion(cube):
+        """Keep a delayed-removal cube fixed at its recorded in-bin pose."""
+        try:
+            cube.set_linear_velocity(np.zeros(3))
+            cube.set_angular_velocity(np.zeros(3))
+        except Exception:
+            # Some actor backends do not expose velocity setters. Reapplying
+            # the pose below is still sufficient for the rendered observation.
+            pass
+
+    def _elapsed_step_index(self):
+        elapsed_steps = self.elapsed_steps
+        if isinstance(elapsed_steps, torch.Tensor):
+            return int(elapsed_steps.reshape(-1)[0].item())
+        return int(elapsed_steps)
+
+    def _maintain_pending_bin_cubes(self):
+        """Pin accepted cubes in the bin until their delayed removal deadline."""
+        pending_removals = []
+        current_step = self._elapsed_step_index()
+        for cube, in_bin_pose, remove_step in self._binfill_pending_cube_removals:
+            if current_step >= remove_step:
+                cube.set_pose(sapien.Pose(p=[10.0, 10.0, 0.0]))
+                self._stop_cube_motion(cube)
+                continue
+
+            cube.set_pose(in_bin_pose)
+            self._stop_cube_motion(cube)
+            pending_removals.append((cube, in_bin_pose, remove_step))
+
+        self._binfill_pending_cube_removals = pending_removals
+
+    def _increment_in_bin_count(self, cube):
+        if cube in self.red_cubes:
+            self.red_cubes_in_bin += 1
+        elif cube in self.blue_cubes:
+            self.blue_cubes_in_bin += 1
+        elif cube in self.green_cubes:
+            self.green_cubes_in_bin += 1
+
+        logger.debug(
+            f"red_cubes_in_bin={self.red_cubes_in_bin},"
+            f"blue_cubes_in_bin={self.blue_cubes_in_bin},"
+            f"green_cubes_in_bin={self.green_cubes_in_bin}"
+        )
+
+    def _is_any_obj_dropped_onto_with_delayed_removal(self, objects, target):
+        """Accept one new in-bin cube now and remove it after a short delay."""
+        for cube in objects:
+            cube_id = id(cube)
+            if cube_id in self._binfill_consumed_cube_ids:
+                continue
+            if not (
+                is_obj_dropped_onto(self, cube, target)
+                and check_block_away_gripper(self, cube)
+            ):
+                continue
+
+            self._binfill_consumed_cube_ids.add(cube_id)
+            self._increment_in_bin_count(cube)
+            in_bin_pose = sapien.Pose(
+                p=cube.pose.p.tolist()[0],
+                q=cube.pose.q.tolist()[0],
+            )
+            remove_step = (
+                self._elapsed_step_index() + self.bin_cube_removal_delay_steps
+            )
+            self._stop_cube_motion(cube)
+            self._binfill_pending_cube_removals.append(
+                (cube, in_bin_pose, remove_step)
+            )
+            return True
+
+        return False
+
+
     def _get_obs_extra(self, info: Dict):
         return dict()
 
 
 
     def evaluate(self,solve_complete_eval=False):
+        # ``BaseEnv.step`` calls evaluate before rendering the observation.
+        # Pin pending cubes here so the successful IN-bin state remains visible
+        # to Reporter and Manager until the next action-chunk boundary.
+        self._maintain_pending_bin_cubes()
         self.successflag=torch.tensor([False])
         # Save current_task_failure state before calling sequential_task_check
         # This is because failure might be detected during step(), but sequential_task_check might reset it
