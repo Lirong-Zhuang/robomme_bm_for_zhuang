@@ -50,7 +50,7 @@ class BinFill(BaseEnv):
     # The policy emits 16-action chunks. Keep a successfully inserted cube
     # visible through the next Manager/Reporter decision boundary, then move it
     # out of the scene.
-    bin_cube_removal_delay_steps = 17
+    bin_cube_removal_delay_steps = 33
 
     # config_hard = {
     # 'color': 3, 
